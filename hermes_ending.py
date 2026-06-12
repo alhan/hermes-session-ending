@@ -93,7 +93,22 @@ def call_deepseek(prompt: str, api_key: str, timeout: int = 30) -> str | None:
         with urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
             msg = data["choices"][0]["message"]
-            title = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+            content = (msg.get("content") or "").strip()
+            reasoning = (msg.get("reasoning_content") or "").strip()
+
+            # Prefer content; for reasoning models, extract title from
+            # the end of reasoning_content (the model's conclusion).
+            if content:
+                title = content
+            elif reasoning:
+                # Take the last non-empty line, or last sentence
+                lines = [l.strip() for l in reasoning.split("\n") if l.strip()]
+                title = lines[-1] if lines else reasoning
+                # Strip any leading "Title:" or quotes from the last line
+                title = re.sub(r"^.*?:\s*", "", title).strip()
+            else:
+                title = ""
+
             # Clean up
             title = title.strip("\"'")
             title = re.sub(r"^Title:\s*", "", title, flags=re.IGNORECASE)
