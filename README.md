@@ -20,13 +20,11 @@ python3 hermes_ending.py --dry-run
 
 ## Hermes İçinde Kullanım
 
-Skill yüklendikten sonra oturumu bitirmek istediğinde şunlardan birini söyle:
+Skill yüklendikten sonra oturumu bitirmek istediğinde şunu söyle:
 
 | Ne dersin? | Ne olur? |
 |---|---|
 | `ending` | Title üretir, konuşmayı kaydeder, `/new` yapmanı söyler |
-| `bitir` | Aynısı (Türkçe) |
-| `tamam` | Aynısı (Türkçe) |
 
 Adım adım:
 1. Hermes agent tüm konuşmadan title üretir ve session DB'ye kaydeder
