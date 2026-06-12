@@ -2,48 +2,63 @@
 
 Hermes Agent oturum sonlandırma iş akışı: tüm konuşmadan başlık üret, kaydet, resetle.
 
-## Hızlı Kurulum (Hermes Skill olarak)
+## Kurulum
+
+### Yöntem 1: Hermes Skill olarak (önerilen)
 
 ```bash
-# Skill'i Hermes'e yükle
 hermes skills install https://git.softmediadesign.com/git_alhan/hermes-session-ending/raw/branch/main/SKILL.md
 ```
+
+### Yöntem 2: Manuel (git clone)
+
+```bash
+git clone https://git.softmediadesign.com/git_alhan/hermes-session-ending.git
+cd hermes-session-ending
+python3 hermes_ending.py --dry-run
+```
+
+## Hermes İçinde Kullanım
+
+Skill yüklendikten sonra oturumu bitirmek istediğinde şunlardan birini söyle:
+
+| Ne dersin? | Ne olur? |
+|---|---|
+| `ending` | Title üretir, konuşmayı kaydeder, `/new` yapmanı söyler |
+| `bitir` | Aynısı (Türkçe) |
+| `tamam` | Aynısı (Türkçe) |
+
+Adım adım:
+1. Hermes agent tüm konuşmadan title üretir ve session DB'ye kaydeder
+2. Konuşmayı `~/.hermes/sessions/saved/` altına JSON olarak export eder
+3. Sana title'ı gösterir, gerekirse `/title yeni başlık` ile değiştirebilirsin
+4. **Sen `/new` yazarsın** → yeni oturum başlar
 
 ## Manuel Kullanım
 
 ```bash
-# Mevcut son CLI oturumuna title üret ve set et
-python3 hermes_ending.py
-
-# Belirli bir oturuma title üret
-python3 hermes_ending.py --session-id 20260612_200601_d78863
-
-# Sadece ne üreteceğini gör (set etme)
-python3 hermes_ending.py --dry-run
+python3 hermes_ending.py                    # Son CLI oturumunu bulur
+python3 hermes_ending.py --session-id SID   # Belirli oturum
+python3 hermes_ending.py --dry-run          # Sadece title'ı gör
+python3 hermes_ending.py --no-save          # Title üret ama export etme
 ```
 
 ## Nasıl Çalışır
 
 1. Session DB'den tüm user+assistant mesajlarını okur
-2. Tüm konuşmayı DeepSeek v4 Flash'e (deepseek-v4-flash) gönderir
-3. Konuşmanın ana konusunu yansıtan 3-7 kelimelik title üretir
-4. Title'ı session DB'ye yazar
+2. Local Ollama'daki `hermes3:latest` ile title üretir
+3. Title'ı session DB'ye yazar
+4. Konuşmayı `~/.hermes/sessions/saved/hermes_<timestamp>.json` dosyasına export eder
 
-## Gereksinimler
+## Yapılandırma
 
-- `~/.hermes/.env` dosyasında `DEEPSEEK_API_KEY` tanımlı olmalı
-- Hermes Agent kurulu olmalı (hermes_state modülü için)
-
-## Hermes Skill Kullanımı
-
-Skill yüklendikten sonra, Hermes içinde oturum sonunda "ending" dediğinde:
-1. Script çalışır, tüm konuşmadan title üretir
-2. Üretilen title'ı görürsün, gerekirse `/title` ile değiştirebilirsin
-3. `/save` ile konuşmayı kaydedersin
-4. `/new` ile yeni oturuma geçersin
+| Değişken | Varsayılan | Açıklama |
+|---|---|---|
+| `HERMES_ENDING_MODEL` | `hermes3:latest` | Title üretimi için model |
+| `HERMES_ENDING_ENDPOINT` | `http://100.83.239.61:11434/v1/chat/completions` | Ollama API adresi |
 
 ## Mimari Not
 
 Bu araç, Hermes'in varsayılan title üretiminden farklıdır:
-- **Varsayılan**: İlk mesaj çiftinden (user+assistant) title üretir, session boyunca bir daha güncellenmez
+- **Varsayılan**: İlk mesaj çiftinden title üretir, session boyunca bir daha güncellenmez
 - **Bu araç**: TÜM konuşma içeriğinden title üretir, oturum sonunda tetiklenir
