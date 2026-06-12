@@ -60,7 +60,7 @@ def build_title_prompt(msgs: list[dict]) -> str:
     transcript = "\n\n".join(conversation)
 
     return (
-        "Generate a short, descriptive title (3-7 words, max 80 chars) for the "
+        "Generate a short, descriptive title (3-7 words, max 50 chars) for the "
         "following conversation. The title should capture the MAIN topic or outcome, "
         "NOT the first message. Consider the entire conversation.\n\n"
         "Return ONLY the title text, nothing else. "
@@ -125,8 +125,8 @@ def call_llm(prompt: str, endpoint: str, model: str, api_key: str = "", timeout:
             # Clean up
             title = title.strip("\"'")
             title = re.sub(r"^Title:\s*", "", title, flags=re.IGNORECASE)
-            if len(title) > 80:
-                title = title[:77] + "..."
+            if len(title) > 50:
+                title = title[:47] + "..."
             return title if title else None
     except URLError as e:
         print(f"LLM API error: {e}", file=sys.stderr)
