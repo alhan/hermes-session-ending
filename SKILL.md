@@ -2,6 +2,7 @@
 name: session-ending
 description: "End a Hermes session: generate title from FULL conversation, save, reset."
 version: 1.1.0
+installed_from: https://git.softmediadesign.com/git_alhan/hermes-session-ending/raw/branch/main/SKILL.md
 ---
 
 # Session Ending
@@ -80,7 +81,8 @@ Reasoning/thinking models burn tokens on internal thought before outputting
 `content` comes back empty and you get the model's thought process instead of
 a clean title. The script already uses 500 by default.
 
-**Preference order for models:** `deepseek-chat` > `hermes3:latest` > `deepseek-v4-flash` (with 500 tokens).
+**Current default:** `deepseek-v4-flash` works reliably with `max_tokens: 500`.
+Alternative if needed: `deepseek-chat` (non-reasoning, simpler) or `hermes3:latest` (local Ollama).
 
 ### 2. Models inject markdown formatting
 
