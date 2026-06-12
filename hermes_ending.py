@@ -91,7 +91,7 @@ def call_llm(prompt: str, endpoint: str, model: str,
     body = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 80,
+        "max_tokens": 500,  # reasoning models need space for thinking
         "temperature": 0.1,
     }).encode("utf-8")
 
@@ -205,13 +205,22 @@ def main():
 
     print(f"Messages: {len(msgs)}")
 
-    # Generate title
+    # Default: DeepSeek API (works everywhere)
     endpoint = os.environ.get(
         "HERMES_ENDING_ENDPOINT",
-        "http://100.83.239.61:11434/v1/chat/completions"
+        "https://api.deepseek.com/v1/chat/completions"
     )
-    model = os.environ.get("HERMES_ENDING_MODEL", "hermes3:latest")
+    model = os.environ.get("HERMES_ENDING_MODEL", "deepseek-v4-flash")
+
+    # Load API key from .env or env override
     api_key = os.environ.get("HERMES_ENDING_API_KEY", "")
+    if not api_key:
+        env_path = HERMES_HOME / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "DEEPSEEK_API_KEY" in line and "=" in line:
+                    api_key = line.split("=", 1)[-1].strip().strip('"').strip("'")
+                    break
 
     prompt = build_title_prompt(msgs)
     print(f"Generating title via {model}...")
