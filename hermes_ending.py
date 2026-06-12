@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Hermes Session Ending — generate title from full conversation and set it.
+"""Hermes Session Ending — generate title + save conversation.
 
 Usage:
-    hermes_ending.py [--session-id SID] [--dry-run]
+    hermes_ending.py [--session-id SID] [--dry-run] [--no-save]
 
-Reads the full user+assistant conversation from a Hermes session,
-generates a descriptive title via DeepSeek Flash, and writes it to
-the session DB.
+1. Reads the full user+assistant conversation from session DB
+2. Generates a title via local Ollama (hermes3:latest)
+3. Sets the title in session DB
+4. Exports conversation to ~/.hermes/sessions/saved/
 
-Requires: DeepSeek API key in ~/.hermes/.env (DEEPSEEK_API_KEY)
+Env vars (optional):
+    HERMES_ENDING_ENDPOINT  — OpenAI-compatible API URL
+    HERMES_ENDING_MODEL     — model name (default: hermes3:latest)
 """
 
 import argparse
@@ -16,31 +19,38 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
-# ── Hermes internals ────────────────────────────────────────────────────────
-
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 sys.path.insert(0, str(HERMES_HOME / "hermes-agent"))
-
 from hermes_state import SessionDB  # noqa: E402
 
 
-def load_deepseek_api_key() -> str:
-    """Load DEEPSEEK_API_KEY from .env or environment."""
-    env_path = HERMES_HOME / ".env"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("DEEPSEEK_API_KEY=") or line.startswith("export DEEPSEEK_API_KEY="):
-                return line.split("=", 1)[-1].strip().strip('"').strip("'")
-    return os.environ.get("DEEPSEEK_API_KEY", "")
+# ── Markdown cleanup ────────────────────────────────────────────────────────
 
+def strip_markdown(text: str) -> str:
+    """Strip markdown formatting: bold, italic, code, quotes."""
+    # Remove code blocks and inline code
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    # Remove bold/italic markers
+    text = re.sub(r"\*\*\*([^*]+)\*\*\*", r"\1", text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"\*([^*]+)\*", r"\1", text)
+    text = re.sub(r"__([^_]+)__", r"\1", text)
+    text = re.sub(r"_([^_]+)_", r"\1", text)
+    # Remove blockquote markers
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
+    return text.strip()
+
+
+# ── Conversation helpers ────────────────────────────────────────────────────
 
 def read_conversation(db: SessionDB, session_id: str) -> list[dict]:
-    """Read all user+assistant messages from a session, skipping tool output."""
+    """Read all user+assistant messages from a session."""
     raw = db.get_messages_as_conversation(session_id)
     return [m for m in raw if m.get("role") in ("user", "assistant")]
 
@@ -49,84 +59,68 @@ def build_title_prompt(msgs: list[dict]) -> str:
     """Build a prompt from the full conversation for title generation."""
     conversation = []
     for m in msgs:
-        role = m["role"]
         content = (m.get("content") or "").strip()
-        # Truncate very long messages to keep prompt reasonable
-        if len(content) > 600:
-            content = content[:600] + "..."
+        if len(content) > 400:  # tighter truncation
+            content = content[:400] + "..."
         if content:
-            conversation.append(f"[{role}] {content}")
+            conversation.append(f"[{m['role']}] {content}")
 
     transcript = "\n\n".join(conversation)
 
     return (
-        "Generate a short, descriptive title (3-7 words, max 50 chars) for the "
-        "following conversation. The title should capture the MAIN topic or outcome, "
-        "NOT the first message. Consider the entire conversation.\n\n"
-        "Return ONLY the title text, nothing else. "
-        "No quotes, no punctuation at the end, no 'Title:' prefix.\n\n"
-        f"CONVERSATION:\n{transcript}"
+        "You are a title generator. Your ONLY job is to output a plain text title.\n\n"
+        "Generate a short, descriptive title (3-7 words, max 50 characters) for the "
+        "conversation below. Capture the MAIN topic from the ENTIRE conversation, "
+        "NOT just the first message.\n\n"
+        "FORMAT RULES — you MUST follow exactly:\n"
+        "- Output ONLY the title text. Nothing else.\n"
+        "- Plain text only — NO markdown, NO quotes, NO asterisks, NO formatting.\n"
+        "- NO punctuation at the end.\n"
+        "- NO 'Title:' prefix.\n"
+        "- NO explanations, NO thinking out loud.\n\n"
+        f"CONVERSATION:\n{transcript}\n\n"
+        "TITLE:"
     )
 
 
-def call_llm(prompt: str, endpoint: str, model: str, api_key: str = "", timeout: int = 30) -> str | None:
-    """Call any OpenAI-compatible chat completions API.
+# ── LLM call ────────────────────────────────────────────────────────────────
 
-    Args:
-        prompt: The user prompt
-        endpoint: Full API URL (e.g. 'http://100.83.239.61:11434/v1/chat/completions')
-        model: Model name (e.g. 'gemma4:12b', 'deepseek-chat')
-        api_key: Optional API key (empty for local Ollama)
-        timeout: Request timeout in seconds
-    """
+def call_llm(prompt: str, endpoint: str, model: str,
+             api_key: str = "", timeout: int = 60) -> str | None:
+    """Call any OpenAI-compatible chat completions API."""
     body = json.dumps({
         "model": model,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 100,
-        "temperature": 0.3,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 80,
+        "temperature": 0.1,
     }).encode("utf-8")
 
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    req = Request(endpoint, data=body, headers=headers)
-
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(Request(endpoint, data=body, headers=headers),
+                     timeout=timeout) as resp:
             data = json.loads(resp.read())
             msg = data["choices"][0]["message"]
-            # Try content first, then reasoning fields (Ollama/DeepSeek thinking models)
-            raw = (
-                msg.get("content")
-                or msg.get("reasoning_content")  # DeepSeek reasoning models
-                or msg.get("reasoning")           # Ollama Gemma thinking models
-                or ""
-            ).strip()
 
-            # For thinking models: extract the FINAL answer from reasoning.
-            # Reasoning usually ends with the actual response after the thinking process.
-            # Strategy: take the last non-empty line that looks like a title candidate.
-            if not msg.get("content") and raw:
-                # Try to find a clear final answer: last line without bullet/list markers
-                lines = [l.strip() for l in raw.split("\n") if l.strip()]
-                # Filter out thinking-process lines (starting with *, -, #, "Thought", etc.)
-                candidates = [
-                    l for l in lines
-                    if not l.startswith(("*", "-", "#", "Thought", "Let", "We need", "I", "The"))
-                    and len(l.split()) >= 2
-                ]
-                title = candidates[-1] if candidates else lines[-1]
-            else:
-                title = raw
+            # Try content first, fall back to reasoning fields
+            raw = (msg.get("content")
+                   or msg.get("reasoning_content")
+                   or msg.get("reasoning")
+                   or "").strip()
 
-            # Clean up
-            title = title.strip("\"'")
-            title = re.sub(r"^Title:\s*", "", title, flags=re.IGNORECASE)
+            # Deep clean: strip markdown, quotes, prefixes
+            title = strip_markdown(raw)
+            title = title.strip("\"'«»„”")
+            title = re.sub(r"^(Title|Başlık)[:\s-]*", "", title, flags=re.IGNORECASE)
+            # Remove any "TITLE:" that our prompt template adds
+            title = re.sub(r"^TITLE:\s*", "", title)
+
             if len(title) > 50:
                 title = title[:47] + "..."
+
             return title if title else None
     except URLError as e:
         print(f"LLM API error: {e}", file=sys.stderr)
@@ -136,21 +130,51 @@ def call_llm(prompt: str, endpoint: str, model: str, api_key: str = "", timeout:
         return None
 
 
+# ── Session helpers ─────────────────────────────────────────────────────────
+
 def find_latest_session(db: SessionDB) -> str | None:
-    """Find the latest open CLI session."""
-    sessions = db.list_sessions_rich(limit=20)
-    for s in sessions:
-        sid = s.get("id", "")
-        source = s.get("source", "")
-        if source == "cli":
-            return sid
+    """Find the latest CLI session."""
+    for s in db.list_sessions_rich(limit=20):
+        if s.get("source") == "cli":
+            return s["id"]
     return None
 
 
+def save_conversation(db: SessionDB, session_id: str,
+                      session_title: str) -> Path | None:
+    """Export session to ~/.hermes/sessions/saved/ as JSON."""
+    saved_dir = HERMES_HOME / "sessions" / "saved"
+    saved_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = saved_dir / f"hermes_{timestamp}.json"
+
+    # Export from DB
+    msgs = db.get_messages(session_id)
+    export = {
+        "session_id": session_id,
+        "title": session_title,
+        "saved_at": datetime.now().isoformat(),
+        "message_count": len(msgs),
+        "messages": msgs,
+    }
+
+    path.write_text(json.dumps(export, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+    return path
+
+
+# ── Main ────────────────────────────────────────────────────────────────────
+
 def main():
-    parser = argparse.ArgumentParser(description="Hermes session ending — title + reset")
-    parser.add_argument("--session-id", help="Session ID (auto-detected if omitted)")
-    parser.add_argument("--dry-run", action="store_true", help="Print title without saving")
+    parser = argparse.ArgumentParser(
+        description="Hermes session ending — title + save"
+    )
+    parser.add_argument("--session-id", help="Session ID")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Print title without saving")
+    parser.add_argument("--no-save", action="store_true",
+                        help="Skip conversation export")
     args = parser.parse_args()
 
     db_path = HERMES_HOME / "state.db"
@@ -162,26 +186,26 @@ def main():
     session_id = args.session_id or find_latest_session(db)
 
     if not session_id:
-        print("No session found. Pass --session-id explicitly.", file=sys.stderr)
+        print("No session found.", file=sys.stderr)
         sys.exit(1)
 
     session = db.get_session(session_id)
     if not session:
-        print(f"Session {session_id} not found in DB.", file=sys.stderr)
+        print(f"Session {session_id} not found.", file=sys.stderr)
         sys.exit(1)
 
     old_title = session.get("title") or "(no title)"
-    print(f"Session: {session_id}\nOld title: {old_title}")
+    print(f"Session: {session_id}")
+    print(f"Old title: {old_title}")
 
-    # Read full conversation
     msgs = read_conversation(db, session_id)
     if len(msgs) < 2:
-        print("Not enough messages to generate a title (need at least 1 exchange).")
+        print("Not enough messages.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Messages: {len(msgs)} (user+assistant)")
+    print(f"Messages: {len(msgs)}")
 
-    # Default backend: local Ollama (no API key needed)
+    # Generate title
     endpoint = os.environ.get(
         "HERMES_ENDING_ENDPOINT",
         "http://100.83.239.61:11434/v1/chat/completions"
@@ -197,19 +221,26 @@ def main():
         print("Title generation failed.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Generated title: {title}")
+    print(f"Title: {title}")
 
     if args.dry_run:
-        print("[DRY RUN] Title not saved.")
+        print("[DRY RUN] Nothing saved.")
         return
 
-    # Save to DB
+    # Set title in DB
     try:
         db.set_session_title(session_id, title)
-        print(f"Title set successfully: {title}")
     except Exception as e:
         print(f"Failed to set title: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Save conversation
+    if not args.no_save:
+        try:
+            path = save_conversation(db, session_id, title)
+            print(f"Saved: {path}")
+        except Exception as e:
+            print(f"Save failed: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
