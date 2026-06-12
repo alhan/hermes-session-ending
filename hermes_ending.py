@@ -92,7 +92,8 @@ def call_deepseek(prompt: str, api_key: str, timeout: int = 30) -> str | None:
     try:
         with urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
-            title = data["choices"][0]["message"]["content"].strip()
+            msg = data["choices"][0]["message"]
+            title = (msg.get("content") or msg.get("reasoning_content") or "").strip()
             # Clean up
             title = title.strip("\"'")
             title = re.sub(r"^Title:\s*", "", title, flags=re.IGNORECASE)
