@@ -1,16 +1,16 @@
 # Hermes Session Ending
 
-Hermes Agent oturum sonlandırma iş akışı: tüm konuşmadan başlık üret, kaydet, resetle.
+End a Hermes session: generate a title from the FULL conversation, save, and reset.
 
-## Kurulum
+## Installation
 
-### Yöntem 1: Hermes Skill olarak (önerilen)
+### Option 1: Hermes Skill (recommended)
 
 ```bash
 hermes skills install https://git.softmediadesign.com/git_alhan/hermes-session-ending/raw/branch/main/SKILL.md
 ```
 
-### Yöntem 2: Manuel (git clone)
+### Option 2: Manual (git clone)
 
 ```bash
 git clone https://git.softmediadesign.com/git_alhan/hermes-session-ending.git
@@ -18,58 +18,56 @@ cd hermes-session-ending
 python3 hermes_ending.py --dry-run
 ```
 
-## Hermes İçinde Kullanım
+## Usage in Hermes
 
-Skill yüklendikten sonra oturumu bitirmek istediğinde şunu söyle:
+Once installed as a skill, trigger it by saying:
 
-| Ne dersin? | Ne olur? |
+| Say this | What happens |
 |---|---|
-| `ending` | Title üretir, konuşmayı kaydeder, `/new` yapmanı söyler |
+| `ending` | Generates title, saves conversation, tells you to `/new` |
 
-Adım adım:
-1. Hermes agent tüm konuşmadan title üretir ve session DB'ye kaydeder
-2. Konuşmayı `~/.hermes/sessions/saved/` altına JSON olarak export eder
-3. Sana title'ı gösterir, gerekirse `/title yeni başlık` ile değiştirebilirsin
-4. **Sen `/new` yazarsın** → yeni oturum başlar
+Step by step:
+1. Agent generates a title from the FULL conversation (not just the first message)
+2. Saves conversation to `~/.hermes/sessions/saved/hermes_<timestamp>.json`
+3. Shows you the title — you can change it with `/title new title`
+4. **You type `/new`** → fresh session starts
 
-## Manuel Kullanım
+## CLI Usage
 
 ```bash
-python3 hermes_ending.py                    # Son CLI oturumunu bulur
-python3 hermes_ending.py --session-id SID   # Belirli oturum
-python3 hermes_ending.py --dry-run          # Sadece title'ı gör
-python3 hermes_ending.py --no-save          # Title üret ama export etme
+python3 hermes_ending.py                    # Auto-detect latest CLI session
+python3 hermes_ending.py --session-id SID   # Specific session
+python3 hermes_ending.py --dry-run          # Preview title only
+python3 hermes_ending.py --no-save          # Title only, no export
 ```
 
-## Nasıl Çalışır
+## How It Works
 
-1. Session DB'den tüm user+assistant mesajlarını okur
-2. DeepSeek v4 Flash API ile title üretir (public, her yerde çalışır)
-3. Title'ı session DB'ye yazar
-4. Konuşmayı `~/.hermes/sessions/saved/hermes_<timestamp>.json` dosyasına export eder
+1. Reads all user+assistant messages from the session DB
+2. Generates a title via DeepSeek v4 Flash API (works everywhere)
+3. Writes title to session DB
+4. Exports conversation to `~/.hermes/sessions/saved/hermes_<timestamp>.json`
 
-## Gereksinimler
+## Requirements
 
-- `~/.hermes/.env` dosyasında `DEEPSEEK_API_KEY` tanımlı olmalı
-- Alternatif: env override ile local Ollama kullanılabilir
+- `DEEPSEEK_API_KEY` in `~/.hermes/.env`
+- Alternative: point to local Ollama via env vars
 
-## Yapılandırma
+## Configuration
 
-| Değişken | Varsayılan | Açıklama |
+| Variable | Default | Description |
 |---|---|---|
-| `HERMES_ENDING_MODEL` | `deepseek-v4-flash` | Title üretimi için model |
-| `HERMES_ENDING_ENDPOINT` | `https://api.deepseek.com/v1/chat/completions` | API adresi |
-| `HERMES_ENDING_API_KEY` | `.env` dosyasından `DEEPSEEK_API_KEY` | API anahtarı |
+| `HERMES_ENDING_MODEL` | `deepseek-v4-flash` | Model for title generation |
+| `HERMES_ENDING_ENDPOINT` | `https://api.deepseek.com/v1/chat/completions` | API endpoint |
+| `HERMES_ENDING_API_KEY` | from `.env` (`DEEPSEEK_API_KEY`) | API key |
 
-Local Ollama için:
+### Using local Ollama instead
+
 ```bash
 export HERMES_ENDING_ENDPOINT="http://localhost:11434/v1/chat/completions"
-export HERMES_ENDING_MODEL="hermes3:latest"
-export HERMES_ENDING_API_KEY=""
-```
+export HERMES_ENDING_MODEL="hermes3:latest"   # or any Ollama model
+export HERMES_ENDING_API_KEY=*** Design Note
 
-## Mimari Not
-
-Bu araç, Hermes'in varsayılan title üretiminden farklıdır:
-- **Varsayılan**: İlk mesaj çiftinden title üretir, session boyunca bir daha güncellenmez
-- **Bu araç**: TÜM konuşma içeriğinden title üretir, oturum sonunda tetiklenir
+This tool differs from Hermes' built-in title generation:
+- **Built-in**: Generates title from the FIRST exchange only, never updates
+- **This tool**: Generates title from the ENTIRE conversation, triggered at session end
