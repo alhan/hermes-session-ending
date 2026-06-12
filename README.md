@@ -46,16 +46,29 @@ python3 hermes_ending.py --no-save          # Title üret ama export etme
 ## Nasıl Çalışır
 
 1. Session DB'den tüm user+assistant mesajlarını okur
-2. Local Ollama'daki `hermes3:latest` ile title üretir
+2. DeepSeek v4 Flash API ile title üretir (public, her yerde çalışır)
 3. Title'ı session DB'ye yazar
 4. Konuşmayı `~/.hermes/sessions/saved/hermes_<timestamp>.json` dosyasına export eder
+
+## Gereksinimler
+
+- `~/.hermes/.env` dosyasında `DEEPSEEK_API_KEY` tanımlı olmalı
+- Alternatif: env override ile local Ollama kullanılabilir
 
 ## Yapılandırma
 
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
-| `HERMES_ENDING_MODEL` | `hermes3:latest` | Title üretimi için model |
-| `HERMES_ENDING_ENDPOINT` | `http://100.83.239.61:11434/v1/chat/completions` | Ollama API adresi |
+| `HERMES_ENDING_MODEL` | `deepseek-v4-flash` | Title üretimi için model |
+| `HERMES_ENDING_ENDPOINT` | `https://api.deepseek.com/v1/chat/completions` | API adresi |
+| `HERMES_ENDING_API_KEY` | `.env` dosyasından `DEEPSEEK_API_KEY` | API anahtarı |
+
+Local Ollama için:
+```bash
+export HERMES_ENDING_ENDPOINT="http://localhost:11434/v1/chat/completions"
+export HERMES_ENDING_MODEL="hermes3:latest"
+export HERMES_ENDING_API_KEY=""
+```
 
 ## Mimari Not
 
