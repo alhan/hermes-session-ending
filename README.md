@@ -7,13 +7,13 @@ End a Hermes session: generate a title from the FULL conversation, save, and res
 ### Option 1: Hermes Skill (recommended)
 
 ```bash
-hermes skills install https://git.softmediadesign.com/git_alhan/hermes-session-ending/raw/branch/main/SKILL.md
+hermes skills install https://github.com/alhan/hermes-session-ending/raw/branch/main/SKILL.md
 ```
 
 ### Option 2: Manual (git clone)
 
 ```bash
-git clone https://git.softmediadesign.com/git_alhan/hermes-session-ending.git
+git clone https://github.com/alhan/hermes-session-ending.git
 cd hermes-session-ending
 python3 hermes_ending.py --dry-run
 ```

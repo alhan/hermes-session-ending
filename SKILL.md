@@ -2,7 +2,7 @@
 name: session-ending
 description: "End a Hermes session: generate title from FULL conversation, save, reset."
 version: 1.1.0
-installed_from: https://git.softmediadesign.com/git_alhan/hermes-session-ending/raw/branch/main/SKILL.md
+installed_from: https://github.com/alhan/hermes-session-ending/raw/branch/main/SKILL.md
 ---
 
 # Session Ending
@@ -111,4 +111,4 @@ The prompt template uses these techniques that proved necessary through trial:
   missing titles. Complementary to this skill (per-session vs. batch).
 - **references/deepseek-reasoning-model.md** — full writeup of the DeepSeek v4 Flash
   reasoning model quirk, reproduction steps, and model compatibility table.
-- Gitea repo: https://git.softmediadesign.com/git_alhan/hermes-session-ending
+- Gitea repo: https://github.com/alhan/hermes-session-ending
