@@ -69,10 +69,18 @@ def build_title_prompt(msgs: list[dict]) -> str:
     )
 
 
-def call_deepseek(prompt: str, api_key: str, timeout: int = 30) -> str | None:
-    """Call DeepSeek API (chat completions, OpenAI-compatible)."""
+def call_llm(prompt: str, endpoint: str, model: str, api_key: str = "", timeout: int = 30) -> str | None:
+    """Call any OpenAI-compatible chat completions API.
+
+    Args:
+        prompt: The user prompt
+        endpoint: Full API URL (e.g. 'http://100.83.239.61:11434/v1/chat/completions')
+        model: Model name (e.g. 'gemma4:12b', 'deepseek-chat')
+        api_key: Optional API key (empty for local Ollama)
+        timeout: Request timeout in seconds
+    """
     body = json.dumps({
-        "model": "deepseek-chat",
+        "model": model,
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -80,20 +88,39 @@ def call_deepseek(prompt: str, api_key: str, timeout: int = 30) -> str | None:
         "temperature": 0.3,
     }).encode("utf-8")
 
-    req = Request(
-        "https://api.deepseek.com/v1/chat/completions",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-    )
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    req = Request(endpoint, data=body, headers=headers)
 
     try:
         with urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
             msg = data["choices"][0]["message"]
-            title = (msg.get("content") or "").strip()
+            # Try content first, then reasoning fields (Ollama/DeepSeek thinking models)
+            raw = (
+                msg.get("content")
+                or msg.get("reasoning_content")  # DeepSeek reasoning models
+                or msg.get("reasoning")           # Ollama Gemma thinking models
+                or ""
+            ).strip()
+
+            # For thinking models: extract the FINAL answer from reasoning.
+            # Reasoning usually ends with the actual response after the thinking process.
+            # Strategy: take the last non-empty line that looks like a title candidate.
+            if not msg.get("content") and raw:
+                # Try to find a clear final answer: last line without bullet/list markers
+                lines = [l.strip() for l in raw.split("\n") if l.strip()]
+                # Filter out thinking-process lines (starting with *, -, #, "Thought", etc.)
+                candidates = [
+                    l for l in lines
+                    if not l.startswith(("*", "-", "#", "Thought", "Let", "We need", "I", "The"))
+                    and len(l.split()) >= 2
+                ]
+                title = candidates[-1] if candidates else lines[-1]
+            else:
+                title = raw
 
             # Clean up
             title = title.strip("\"'")
@@ -102,7 +129,7 @@ def call_deepseek(prompt: str, api_key: str, timeout: int = 30) -> str | None:
                 title = title[:77] + "..."
             return title if title else None
     except URLError as e:
-        print(f"DeepSeek API error: {e}", file=sys.stderr)
+        print(f"LLM API error: {e}", file=sys.stderr)
         return None
     except (KeyError, json.JSONDecodeError, IndexError) as e:
         print(f"Unexpected API response: {e}", file=sys.stderr)
@@ -154,15 +181,17 @@ def main():
 
     print(f"Messages: {len(msgs)} (user+assistant)")
 
-    # Generate title
-    api_key = load_deepseek_api_key()
-    if not api_key:
-        print("DEEPSEEK_API_KEY not found. Set it in ~/.hermes/.env", file=sys.stderr)
-        sys.exit(1)
+    # Default backend: local Ollama (no API key needed)
+    endpoint = os.environ.get(
+        "HERMES_ENDING_ENDPOINT",
+        "http://100.83.239.61:11434/v1/chat/completions"
+    )
+    model = os.environ.get("HERMES_ENDING_MODEL", "hermes3:latest")
+    api_key = os.environ.get("HERMES_ENDING_API_KEY", "")
 
     prompt = build_title_prompt(msgs)
-    print("Generating title from full conversation...")
-    title = call_deepseek(prompt, api_key)
+    print(f"Generating title via {model}...")
+    title = call_llm(prompt, endpoint, model, api_key)
 
     if not title:
         print("Title generation failed.", file=sys.stderr)
